@@ -24,3 +24,4 @@ cmake --build build
 ```sh
 ./build/eeprom_tool [options]
 ```
+![Example](eeprom_tool.png)
