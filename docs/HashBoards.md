@@ -33,7 +33,7 @@
 | S21     | BHB68603 | 1368 | 108 | 12
 |         | BHB68606 | 1368 | 108 | 12
 |         | BHB68701 |
-| S21XP   |A3HB70501 | 1370 |  91 | 13
+| S21xp   |A3HB70501 | 1370 |  91 | 13
 | S21 Pro |A3HB70601 | 1370 |  65 | 13
 |         |A3HB70601 | 1370 |  65 | 13
 | S21+    |A3HB70701 | 1370 |  
@@ -55,9 +55,13 @@
 * Чип: BM1398AD S19a / S19a Pro
 * Чип: BM1398AC S19a / S19a Pro / S19+
 * Чип: BM1398BB S19 / S19 Pro / T19 / S19 Hyd
-* Чип: BM1362AC S19j / S19j pro / S19 Pro Hyd
-* Чип: BM1362AI S19j/S19j pro/S19j pro+ Hydro
+* Чип: BM1360BB S19i / S19j pro
+* Чип: BM1362AA S19j / S19j pro
+* Чип: BM1362AC S19j / S19j pro / S19j Pro Hydro
+* Чип: BM1362AI S19j / S19j pro / S19j pro+ Hydro
+* Чип: BM1362AK S19j / S19j pro / S19j Pro+ Hydro
 * Чип: BM1362BD S19j Pro+
+* Чип: BM1366AG S19xp
 * Чип: BM1366 S19k
 * Чип: BM1368 (TSMC 5 нм класс / оптимизированный 7 нм+)
 * Чип: BM1370 S21+
