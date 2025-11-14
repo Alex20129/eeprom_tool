@@ -103,4 +103,53 @@ typedef struct __attribute__((__packed__))
 void eeprom_v17_parse(EEPROMStructure_v17 *eeprom, const uint8_t *data);
 void eeprom_v17_serialize(const EEPROMStructure_v17 *eeprom, uint8_t *data);
 
+// ═══════════════════════════════════════════════════════════════
+// EEPROM v1 Structure (Antminer S21+ - 256 bytes)
+// ═══════════════════════════════════════════════════════════════
+typedef struct __attribute__((__packed__))
+{
+	// Header (16 bytes, NOT encrypted)
+	uint8_t eeprom_version;          // 0: Version = 1
+	char board_name[15];             // 1-15: Board name (e.g. "A3HB70701")
+
+	// PT1: Board Information (80 bytes, encrypted)
+	struct __attribute__((__packed__)) {
+		char board_serial[18];       // 0-17: Board serial number
+		char factory_job[24];        // 18-41: Factory job ID
+		char chip_die[3];            // 42-44: Chip die version
+		char chip_marking[14];       // 45-58: Chip marking
+		char ft_version[10];         // 59-68: Factory test version
+		char chip_tech[3];           // 69-71: Chip technology node
+		uint8_t chip_bin;            // 72: Chip bin class
+		uint16_t pcb_version;        // 73-74: PCB version (little-endian)
+		uint8_t bom_version;         // 75: BOM version
+		uint8_t asic_sensor_type;    // 76: ASIC sensor type
+		uint8_t pt1_result;          // 77: Production test 1 result
+		uint8_t pt1_count;           // 78: Production test 1 count
+		uint8_t crc;                 // 79: CRC5 for this block
+	} pt1_data;
+
+	// PT2: Test Parameters (16 bytes, encrypted)
+	struct __attribute__((__packed__)) {
+		uint16_t voltage;            // 0-1: PSU voltage (in 0.01V)
+		uint16_t frequency;          // 2-3: Chip frequency (MHz)
+		uint16_t nonce_rate;         // 4-5: Nonce rate (in 0.01)
+		uint8_t done_type;           // 6: Done type
+		int8_t temp_in;              // 7: PCB temperature input (°C)
+		int8_t temp_out;             // 8: PCB temperature output (°C)
+		uint8_t reserved1[2];        // 9-10: Reserved
+		uint8_t pt2_result;          // 11: Production test 2 result
+		uint8_t pt2_count;           // 12: Production test 2 count
+		uint8_t reserved2[2];        // 13-14: Reserved
+		uint8_t crc;                 // 15: CRC5 for this block
+	} pt2_data;
+
+	// SWEEP: Frequency Optimization (144 bytes, encrypted)
+	// Structure unknown - storing as raw data
+	uint8_t sweep_data_raw[144];     // 0-143: Raw encrypted SWEEP data (includes CRC at byte 143)
+} EEPROMStructure_v1;
+
+void eeprom_v1_parse(EEPROMStructure_v1 *eeprom, const uint8_t *data);
+void eeprom_v1_serialize(const EEPROMStructure_v1 *eeprom, uint8_t *data);
+
 #endif // EEPROM_STRUCTURE_H

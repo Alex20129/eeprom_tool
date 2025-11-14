@@ -1,6 +1,8 @@
 #include "crypto.h"
 #include "eeprom_defs.h"
 #include <string.h>
+#include <openssl/evp.h>
+#include <openssl/aes.h>
 
 #define DELTA 0x9E3779B9
 
@@ -160,4 +162,198 @@ static uint8_t crc5(uint8_t crc, const uint8_t *ptr, size_t bits)
 uint8_t calculate_crc(const uint8_t *ptr, size_t bits)
 {
 	return crc5(0xFF, ptr, bits);
+}
+
+// ═══════════════════════════════════════════════════════════════
+// CRC-8
+// ═══════════════════════════════════════════════════════════════
+// Polynomial: 0x8C (reflected)
+// Initial value: 0x00
+uint8_t calculate_crc8_v1(const uint8_t *data, size_t length)
+{
+	uint8_t crc = 0;
+
+	for (size_t i = 0; i < length; i++)
+	{
+		crc ^= data[i];
+
+		for (int bit = 0; bit < 8; bit++)
+		{
+			if (crc & 1)
+			{
+				crc = (crc >> 1) ^ 0x8C;
+			}
+			else
+			{
+				crc = crc >> 1;
+			}
+		}
+	}
+
+	return crc;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// EEPROM v1 Crypto (AES-256-CBC for S21+)
+// ═══════════════════════════════════════════════════════════════
+
+// UTF-8 китайские ключевые фразы из ROM прошивки S21+ (0x2C4400)
+// "可上九天揽月，可下五洋捉鳖" (32 байта)
+static const uint8_t KEY_PHRASE_1_V1[32] =
+{
+	0xE5, 0x8F, 0xAF, 0xE4, 0xB8, 0x8A, 0xE4, 0xB9,
+	0x9D, 0xE5, 0xA4, 0xA9, 0xE6, 0x8F, 0xBD, 0xE6,
+	0x9C, 0x88, 0xEF, 0xBC, 0x8C, 0xE5, 0x8F, 0xAF,
+	0xE4, 0xB8, 0x8B, 0xE4, 0xBA, 0x94, 0xE6, 0xB4
+};
+
+// "世上无难事" (16 байт)
+static const uint8_t KEY_PHRASE_2_V1[16] =
+{
+	0xE4, 0xB8, 0x96, 0xE4, 0xB8, 0x8A, 0xE6, 0x97,
+	0xA0, 0xE9, 0x9A, 0xBE, 0xE4, 0xBA, 0x8B, 0xEF
+};
+
+// DWORD-wise XOR (little-endian)
+static void xor_with_key_dword(uint8_t *dst, const uint8_t *src, size_t len, uint32_t key)
+{
+	for (size_t i = 0; i < len; i += 4)
+	{
+		// Read DWORD from source (little-endian)
+		uint32_t src_dword = *(const uint32_t*)(src + i);
+
+		// XOR with key
+		uint32_t dst_dword = src_dword ^ key;
+
+		// Write back (little-endian)
+		*(uint32_t*)(dst + i) = dst_dword;
+	}
+}
+
+static void derive_aes_key_v1(uint32_t encryption_key, uint8_t aes_key[32], uint8_t aes_iv[16])
+{
+	uint8_t crypto_table_1[32];
+	uint8_t crypto_table_2[16];
+
+	xor_with_key_dword(crypto_table_1, KEY_PHRASE_1_V1, 32, encryption_key);
+	xor_with_key_dword(crypto_table_2, KEY_PHRASE_2_V1, 16, encryption_key);
+
+	uint32_t key_selector = (encryption_key % 3) + 2;
+
+	for (size_t i = 0; i < 32; i++)
+	{
+		if (i > 15 || (i % key_selector) != 0)
+		{
+			aes_key[i] = crypto_table_1[i];
+		}
+		else
+		{
+			aes_key[i] = crypto_table_2[i];
+		}
+	}
+
+	for (size_t i = 0; i < 16; i++)
+	{
+		if ((i % key_selector) != 0)
+		{
+			aes_iv[i] = crypto_table_2[i];
+		}
+		else
+		{
+			aes_iv[i] = crypto_table_1[i];
+		}
+	}
+}
+
+int decode_data_v1(uint8_t *data, size_t length, uint32_t encryption_key)
+{
+	uint8_t aes_key[32];
+	uint8_t aes_iv[16];
+
+	derive_aes_key_v1(encryption_key, aes_key, aes_iv);
+
+	EVP_CIPHER_CTX *ctx = EVP_CIPHER_CTX_new();
+	if (!ctx) return -1;
+
+	if (EVP_DecryptInit_ex(ctx, EVP_aes_256_cbc(), NULL, aes_key, aes_iv) != 1)
+	{
+		EVP_CIPHER_CTX_free(ctx);
+		return -1;
+	}
+
+	EVP_CIPHER_CTX_set_padding(ctx, 0);
+
+	int len;
+	if (EVP_DecryptUpdate(ctx, data, &len, data, length) != 1)
+	{
+		EVP_CIPHER_CTX_free(ctx);
+		return -1;
+	}
+
+	int final_len;
+	if (EVP_DecryptFinal_ex(ctx, data + len, &final_len) != 1)
+	{
+		EVP_CIPHER_CTX_free(ctx);
+		return -1;
+	}
+
+	EVP_CIPHER_CTX_free(ctx);
+
+	uint8_t crypto_table_1[32];
+	xor_with_key_dword(crypto_table_1, KEY_PHRASE_1_V1, 32, encryption_key);
+	uint8_t xor_key = crypto_table_1[1];
+
+	for (size_t i = 0; i < length; i++)
+	{
+		data[i] ^= xor_key;
+	}
+
+	return 0;
+}
+
+int encode_data_v1(uint8_t *data, size_t length, uint32_t encryption_key)
+{
+	uint8_t aes_key[32];
+	uint8_t aes_iv[16];
+
+	derive_aes_key_v1(encryption_key, aes_key, aes_iv);
+
+	// XOR pre-processing
+	uint8_t crypto_table_1[32];
+	xor_with_key_dword(crypto_table_1, KEY_PHRASE_1_V1, 32, encryption_key);
+	uint8_t xor_key = crypto_table_1[1];
+
+	for (size_t i = 0; i < length; i++)
+	{
+		data[i] ^= xor_key;
+	}
+
+	EVP_CIPHER_CTX *ctx = EVP_CIPHER_CTX_new();
+	if (!ctx) return -1;
+
+	if (EVP_EncryptInit_ex(ctx, EVP_aes_256_cbc(), NULL, aes_key, aes_iv) != 1)
+	{
+		EVP_CIPHER_CTX_free(ctx);
+		return -1;
+	}
+
+	EVP_CIPHER_CTX_set_padding(ctx, 0);
+
+	int len;
+	if (EVP_EncryptUpdate(ctx, data, &len, data, length) != 1)
+	{
+		EVP_CIPHER_CTX_free(ctx);
+		return -1;
+	}
+
+	int final_len;
+	if (EVP_EncryptFinal_ex(ctx, data + len, &final_len) != 1)
+	{
+		EVP_CIPHER_CTX_free(ctx);
+		return -1;
+	}
+
+	EVP_CIPHER_CTX_free(ctx);
+
+	return 0;
 }

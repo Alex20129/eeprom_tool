@@ -89,6 +89,13 @@ static void decode_and_print_eeprom(uint8_t *data)
 	// Parse and print structure
 	switch(version)
 	{
+		case EEPROM_VERSION_V1:
+		{
+			EEPROMStructure_v1 eeprom_v1;
+			eeprom_v1_parse(&eeprom_v1, data);
+			ui_print_eeprom(&eeprom_v1, version);
+			break;
+		}
 		case EEPROM_VERSION_V4:
 		case EEPROM_VERSION_V5:
 		case EEPROM_VERSION_V6:
@@ -125,6 +132,26 @@ static void encode_and_save_eeprom(const char *filename, EEPROMStructure *eeprom
 	if (write_eeprom_file(filename, data, EEPROM_SIZE) == 0)
 	{
 		printf("EEPROM data successfully encoded and saved to %s\n", filename);
+	}
+}
+
+static void encode_and_save_eeprom_v1(const char *filename, EEPROMStructure_v1 *eeprom)
+{
+	uint8_t data[EEPROM_SIZE];
+	memset(data, 0xFF, EEPROM_SIZE);
+
+	eeprom_v1_serialize(eeprom, data);
+
+	if (eeprom_encode(data, EEPROM_SIZE, EEPROM_VERSION_V1) != EEPROM_SUCCESS)
+	{
+		printf("Error: Failed to encode EEPROM v1\n");
+		return;
+	}
+
+	size_t size = eeprom_get_used_size(EEPROM_VERSION_V1);
+	if (write_eeprom_file(filename, data, size) == 0)
+	{
+		printf("EEPROM v1 data successfully encoded and saved to %s\n", filename);
 	}
 }
 
@@ -196,15 +223,25 @@ int main(int argc, char *argv[])
 			{
 				EEPROMVersion version = eeprom_detect_version(data);
 
-				// Decode data
 				if (eeprom_decode(data, EEPROM_SIZE, version) != EEPROM_SUCCESS)
 				{
 					ui_print_error("Failed to decode EEPROM");
 					break;
 				}
 
-				// Parse, edit and save
-				if (version >= EEPROM_VERSION_V4 && version <= EEPROM_VERSION_V6)
+				if (version == EEPROM_VERSION_V1)
+				{
+					EEPROMStructure_v1 eeprom_v1;
+					eeprom_v1_parse(&eeprom_v1, data);
+
+					if (eeprom_edit_interactive(&eeprom_v1, version) == EEPROM_SUCCESS)
+					{
+						printf("Enter output filename: ");
+						scanf("%255s", output_filename);
+						encode_and_save_eeprom_v1(output_filename, &eeprom_v1);
+					}
+				}
+				else if (version >= EEPROM_VERSION_V4 && version <= EEPROM_VERSION_V6)
 				{
 					EEPROMStructure eeprom;
 					eeprom_from_bytes(&eeprom, data);

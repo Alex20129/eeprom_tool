@@ -69,6 +69,37 @@ void ui_print_category_header(const char *category)
 }
 
 // ═══════════════════════════════════════════════════════════════
+// Hex Dump Functions
+// ═══════════════════════════════════════════════════════════════
+
+static void ui_print_hex_dump(const uint8_t *data, size_t size)
+{
+	for (size_t i = 0; i < size; i += 16)
+	{
+		printf("  %04zX: ", i);
+
+		for (size_t j = 0; j < 16; j++)
+		{
+			if (i + j < size)
+			{
+				printf("%02X ", data[i + j]);
+			}
+			else
+			{
+				printf("   ");
+			}
+
+			if (j == 7)
+			{
+				printf(" ");
+			}
+		}
+
+		printf("\n");
+	}
+}
+
+// ═══════════════════════════════════════════════════════════════
 // Input Functions with Validation
 // ═══════════════════════════════════════════════════════════════
 
@@ -245,6 +276,7 @@ void ui_print_field(const void *base, const FieldMetadata *field)
 				const EEPROMStructure *eeprom = (const EEPROMStructure*)base;
 				uint16_t freq_base = eeprom->sweep_data.sweep_freq_base;
 				uint8_t freq_step = eeprom->sweep_data.sweep_freq_step;
+				size_t array_size = field->size;  // 128 bytes for v4/v5/v6
 				const uint8_t *array = (const uint8_t*)ptr;
 
 				printf("  " TERM_BOLD "%-27s" TERM_RESET ":", field->name);
@@ -254,8 +286,8 @@ void ui_print_field(const void *base, const FieldMetadata *field)
 				}
 				printf("\n");
 
-				// Выводим 256 частот (128 байт * 2 частоты на байт)
-				for (size_t i = 0; i < 128; i++)
+				// Выводим частоты (каждый байт содержит 2 частоты по 4 бита)
+				for (size_t i = 0; i < array_size; i++)
 				{
 					if (i % 8 == 0)
 					{
@@ -324,7 +356,11 @@ void ui_print_eeprom(const void *eeprom_struct, EEPROMVersion version)
 	}
 
 	char title[64];
-	if (version == EEPROM_VERSION_V17)
+	if (version == EEPROM_VERSION_V1)
+	{
+		snprintf(title, sizeof(title), "EEPROM v1 Structure (Antminer S21+ Series)");
+	}
+	else if (version == EEPROM_VERSION_V17)
 	{
 		snprintf(title, sizeof(title), "EEPROM v17 Structure (Antminer L Series)");
 	}
@@ -347,6 +383,16 @@ void ui_print_eeprom(const void *eeprom_struct, EEPROMVersion version)
 		}
 
 		ui_print_field(eeprom_struct, field);
+	}
+
+	// Special handling for EEPROM v1 SWEEP region (raw data)
+	if (version == EEPROM_VERSION_V1)
+	{
+		const EEPROMStructure_v1 *eeprom_v1 = (const EEPROMStructure_v1*)eeprom_struct;
+
+		ui_print_category_header("SWEEP Region (raw data)");
+		printf("  " TERM_DIM "Structure unknown - showing decrypted raw bytes\n" TERM_RESET);
+		ui_print_hex_dump(eeprom_v1->sweep_data_raw, 144);
 	}
 
 	printf("\n");

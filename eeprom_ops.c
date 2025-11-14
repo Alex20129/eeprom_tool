@@ -67,6 +67,68 @@ int eeprom_decode(uint8_t *data, size_t size, EEPROMVersion version)
 
 	printf("EEPROM Version: %d (0x%02X)\n", version, data[0]);
 
+	// ═══════════════════════════════════════════════════════════════
+	// EEPROM v1 (AES-256-CBC)
+	// ═══════════════════════════════════════════════════════════════
+	if (version == EEPROM_VERSION_V1)
+	{
+		uint32_t encryption_key = EEPROM_V1_KEY_PRODUCTION;
+
+		if (decode_data_v1(data + EEPROM_V1_PT1_START,
+						   EEPROM_V1_PT1_SIZE,
+						   encryption_key) != 0)
+		{
+			printf("Error: Failed to decrypt PT1 block\n");
+			return EEPROM_ERROR_UNKNOWN;
+		}
+
+		uint8_t pt1_crc_calc = calculate_crc8_v1(data + EEPROM_V1_PT1_START,
+												  EEPROM_V1_PT1_CRC_BYTES);
+		if (pt1_crc_calc != data[EEPROM_V1_PT1_CRC_POS])
+		{
+			printf("Warning: PT1 CRC mismatch. Calculated: 0x%02X, Stored: 0x%02X\n",
+				   pt1_crc_calc, data[EEPROM_V1_PT1_CRC_POS]);
+		}
+
+		if (decode_data_v1(data + EEPROM_V1_PT2_START,
+						   EEPROM_V1_PT2_SIZE,
+						   encryption_key) != 0)
+		{
+			printf("Error: Failed to decrypt PT2 block\n");
+			return EEPROM_ERROR_UNKNOWN;
+		}
+
+		uint8_t pt2_crc_calc = calculate_crc8_v1(data + EEPROM_V1_PT2_START,
+												  EEPROM_V1_PT2_CRC_BYTES);
+		if (pt2_crc_calc != data[EEPROM_V1_PT2_CRC_POS])
+		{
+			printf("Warning: PT2 CRC mismatch. Calculated: 0x%02X, Stored: 0x%02X\n",
+				   pt2_crc_calc, data[EEPROM_V1_PT2_CRC_POS]);
+		}
+
+		if (decode_data_v1(data + EEPROM_V1_SWEEP_START,
+						   EEPROM_V1_SWEEP_SIZE,
+						   encryption_key) != 0)
+		{
+			printf("Error: Failed to decrypt SWEEP block\n");
+			return EEPROM_ERROR_UNKNOWN;
+		}
+
+		uint8_t sweep_crc_calc = calculate_crc8_v1(data + EEPROM_V1_SWEEP_START,
+													EEPROM_V1_SWEEP_CRC_BYTES);
+		if (sweep_crc_calc != data[EEPROM_V1_SWEEP_CRC_POS])
+		{
+			printf("Warning: SWEEP CRC mismatch. Calculated: 0x%02X, Stored: 0x%02X\n",
+				   sweep_crc_calc, data[EEPROM_V1_SWEEP_CRC_POS]);
+		}
+
+		return EEPROM_SUCCESS;
+	}
+
+	// ═══════════════════════════════════════════════════════════════
+	// EEPROM v4/v5/v6/v17 - Generic region processing (XXTEA/XOR)
+	// ═══════════════════════════════════════════════════════════════
+
 	const EEPROMLayout *layout = eeprom_get_layout(version);
 	if (!layout)
 	{
@@ -109,6 +171,53 @@ int eeprom_encode(uint8_t *data, size_t size, EEPROMVersion version)
 			return EEPROM_ERROR_VERSION;
 		}
 	}
+
+	// ═══════════════════════════════════════════════════════════════
+	// EEPROM v1 (AES-256-CBC)
+	// ═══════════════════════════════════════════════════════════════
+	if (version == EEPROM_VERSION_V1)
+	{
+		uint32_t encryption_key = EEPROM_V1_KEY_PRODUCTION;
+
+		data[EEPROM_V1_PT1_CRC_POS] = calculate_crc8_v1(data + EEPROM_V1_PT1_START,
+														 EEPROM_V1_PT1_CRC_BYTES);
+
+		if (encode_data_v1(data + EEPROM_V1_PT1_START,
+						   EEPROM_V1_PT1_SIZE,
+						   encryption_key) != 0)
+		{
+			printf("Error: Failed to encrypt PT1 block\n");
+			return EEPROM_ERROR_UNKNOWN;
+		}
+
+		data[EEPROM_V1_PT2_CRC_POS] = calculate_crc8_v1(data + EEPROM_V1_PT2_START,
+														 EEPROM_V1_PT2_CRC_BYTES);
+
+		if (encode_data_v1(data + EEPROM_V1_PT2_START,
+						   EEPROM_V1_PT2_SIZE,
+						   encryption_key) != 0)
+		{
+			printf("Error: Failed to encrypt PT2 block\n");
+			return EEPROM_ERROR_UNKNOWN;
+		}
+
+		data[EEPROM_V1_SWEEP_CRC_POS] = calculate_crc8_v1(data + EEPROM_V1_SWEEP_START,
+														   EEPROM_V1_SWEEP_CRC_BYTES);
+
+		if (encode_data_v1(data + EEPROM_V1_SWEEP_START,
+						   EEPROM_V1_SWEEP_SIZE,
+						   encryption_key) != 0)
+		{
+			printf("Error: Failed to encrypt SWEEP block\n");
+			return EEPROM_ERROR_UNKNOWN;
+		}
+
+		return EEPROM_SUCCESS;
+	}
+
+	// ═══════════════════════════════════════════════════════════════
+	// EEPROM v4/v5/v6/v17 - Generic region processing (XXTEA/XOR)
+	// ═══════════════════════════════════════════════════════════════
 
 	const EEPROMLayout *layout = eeprom_get_layout(version);
 	if (!layout)
@@ -228,14 +337,11 @@ int eeprom_edit_interactive(void *eeprom_struct, EEPROMVersion version)
 
 	while (1)
 	{
-		// Print current structure
 		ui_print_eeprom(eeprom_struct, version);
 
-		// Show menu
 		printf("\n" TERM_BOLD "Edit Menu:" TERM_RESET "\n");
 		printf("Select field to edit (1-%zu), or 0 to finish:\n", field_count);
 
-		// Group fields by category
 		const char *current_category = NULL;
 		for (size_t i = 0; i < field_count; i++)
 		{

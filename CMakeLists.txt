@@ -6,6 +6,9 @@ SET(CMAKE_BUILD_TYPE Debug)
 
 SET(CMAKE_C_FLAGS "-O2 -Wall")
 
+# Find OpenSSL for AES-256-CBC (EEPROM v1 support)
+FIND_PACKAGE(OpenSSL REQUIRED)
+
 # Common sources for all platforms
 SET(SOURCES
     main.c
@@ -27,3 +30,6 @@ IF(UNIX AND NOT APPLE)
 ENDIF()
 
 ADD_EXECUTABLE(${PROJECT_NAME} ${SOURCES})
+
+# Link OpenSSL libraries
+TARGET_LINK_LIBRARIES(${PROJECT_NAME} OpenSSL::SSL OpenSSL::Crypto)

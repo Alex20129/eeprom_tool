@@ -10,6 +10,7 @@
 typedef enum
 {
 	EEPROM_VERSION_UNKNOWN = -1,
+	EEPROM_VERSION_V1 = 1,
 	EEPROM_VERSION_V4 = 4,
 	EEPROM_VERSION_V5 = 5,
 	EEPROM_VERSION_V6 = 6,
@@ -70,10 +71,39 @@ typedef enum
 #define EEPROM_V17_CRC_BITS        (81 * 8)  // 648 bits
 
 // ═══════════════════════════════════════════════════════════════
+// EEPROM v1 Layout (Antminer S21+)
+// ═══════════════════════════════════════════════════════════════
+#define EEPROM_V1_HEADER_SIZE      16   // version (1) + board_name (15)
+#define EEPROM_V1_USED_SIZE        256
+
+// PT1: Board Information (v1)
+#define EEPROM_V1_PT1_START        16
+#define EEPROM_V1_PT1_SIZE         80
+#define EEPROM_V1_PT1_CRC_POS      95   // 16 + 79
+#define EEPROM_V1_PT1_CRC_BYTES    79   // CRC от 79 байт (16-94)
+
+// PT2: Test Parameters (v1)
+#define EEPROM_V1_PT2_START        96   // 16 + 80
+#define EEPROM_V1_PT2_SIZE         16
+#define EEPROM_V1_PT2_CRC_POS      111  // 96 + 15
+#define EEPROM_V1_PT2_CRC_BYTES    15   // CRC от 15 байт (96-110)
+
+// SWEEP: Frequency Optimization (v1)
+#define EEPROM_V1_SWEEP_START      112  // 16 + 80 + 16
+#define EEPROM_V1_SWEEP_SIZE       144
+#define EEPROM_V1_SWEEP_CRC_POS    255  // 112 + 143
+#define EEPROM_V1_SWEEP_CRC_BYTES  143  // CRC от 143 байт (112-254)
+
+// v1 Encryption Keys
+#define EEPROM_V1_KEY_PRODUCTION   0xAA4380BCU
+#define EEPROM_V1_KEY_FIXTURE      0x34658922U
+
+// ═══════════════════════════════════════════════════════════════
 // Encryption Algorithm Constants
 // ═══════════════════════════════════════════════════════════════
 #define CRYPTO_ALGORITHM_XXTEA     1
 #define CRYPTO_ALGORITHM_XOR       2
+#define CRYPTO_ALGORITHM_AES256CBC 3
 
 // ═══════════════════════════════════════════════════════════════
 // Region Metadata System
@@ -123,6 +153,10 @@ static inline EEPROMVersion eeprom_detect_version(const uint8_t *data)
 	{
 		return EEPROM_VERSION_V17;
 	}
+	else if (version_byte == 1)
+	{
+		return EEPROM_VERSION_V1;
+	}
 	else if (version_byte >= 4 && version_byte <= 6)
 	{
 		return (EEPROMVersion)version_byte;
@@ -135,6 +169,8 @@ static inline size_t eeprom_get_used_size(EEPROMVersion version)
 {
 	switch (version)
 	{
+		case EEPROM_VERSION_V1:
+			return EEPROM_V1_USED_SIZE;
 		case EEPROM_VERSION_V4:
 		case EEPROM_VERSION_V5:
 		case EEPROM_VERSION_V6:
@@ -196,12 +232,51 @@ static const RegionMeta v17_regions[] =
 	}
 };
 
+// v1 regions (for reference; v1 uses special CRC-8 handling)
+static const RegionMeta v1_regions[] =
+{
+	{
+		.name = "PT1 (Board Info)",
+		.data_start = EEPROM_V1_PT1_START,
+		.data_size = EEPROM_V1_PT1_SIZE,
+		.crc_pos = EEPROM_V1_PT1_CRC_POS,
+		.crc_bits = EEPROM_V1_PT1_CRC_BYTES * 8,
+		.test_result_pos = 93,  // 16 + 77
+		.test_name = "PT1"
+	},
+	{
+		.name = "PT2 (Test Params)",
+		.data_start = EEPROM_V1_PT2_START,
+		.data_size = EEPROM_V1_PT2_SIZE,
+		.crc_pos = EEPROM_V1_PT2_CRC_POS,
+		.crc_bits = EEPROM_V1_PT2_CRC_BYTES * 8,
+		.test_result_pos = 107,  // 96 + 11
+		.test_name = "PT2"
+	},
+	{
+		.name = "SWEEP (Freq Optimization)",
+		.data_start = EEPROM_V1_SWEEP_START,
+		.data_size = EEPROM_V1_SWEEP_SIZE,
+		.crc_pos = EEPROM_V1_SWEEP_CRC_POS,
+		.crc_bits = EEPROM_V1_SWEEP_CRC_BYTES * 8,
+		.test_result_pos = 253,  // 112 + 141
+		.test_name = "Sweep"
+	}
+};
+
 // Get layout for EEPROM version
 static inline const EEPROMLayout* eeprom_get_layout(EEPROMVersion version)
 {
 	// Static layout definitions
 	static const EEPROMLayout layouts[] =
 	{
+		{
+			.version = EEPROM_VERSION_V1,
+			.regions = v1_regions,
+			.region_count = 3,
+			.algorithm = CRYPTO_ALGORITHM_AES256CBC,
+			.key_index = 0  // 0 = production key
+		},
 		{
 			.version = EEPROM_VERSION_V4,
 			.regions = v4_v6_regions,
@@ -865,11 +940,292 @@ static const FieldMetadata eeprom_v17_fields[] =
 
 #define EEPROM_V17_FIELD_COUNT (sizeof(eeprom_v17_fields) / sizeof(eeprom_v17_fields[0]))
 
+// v1 field metadata (S21+ series)
+static const FieldMetadata eeprom_v1_fields[] =
+{
+	// Header
+	{
+		.name = "EEPROM Version",
+		.category = "Header",
+		.type = FIELD_TYPE_UINT8,
+		.offset = offsetof(EEPROMStructure_v1, eeprom_version),
+		.size = sizeof(uint8_t),
+		.min_value = 1,
+		.max_value = 1,
+		.unit = NULL,
+		.format = "%d",
+		.read_only = 1
+	},
+	{
+		.name = "Board Name",
+		.category = "Header",
+		.type = FIELD_TYPE_STRING,
+		.offset = offsetof(EEPROMStructure_v1, board_name),
+		.size = 15,
+		.min_value = 0,
+		.max_value = 0,
+		.unit = NULL,
+		.format = "%.15s",
+		.read_only = 0
+	},
+
+	// PT1: Board Information
+	{
+		.name = "Board Serial",
+		.category = "Board Information",
+		.type = FIELD_TYPE_STRING,
+		.offset = offsetof(EEPROMStructure_v1, pt1_data.board_serial),
+		.size = 18,
+		.min_value = 0,
+		.max_value = 0,
+		.unit = NULL,
+		.format = "%.18s",
+		.read_only = 0
+	},
+	{
+		.name = "Factory Job",
+		.category = "Board Information",
+		.type = FIELD_TYPE_STRING,
+		.offset = offsetof(EEPROMStructure_v1, pt1_data.factory_job),
+		.size = 24,
+		.min_value = 0,
+		.max_value = 0,
+		.unit = NULL,
+		.format = "%.24s",
+		.read_only = 0
+	},
+	{
+		.name = "Chip Die",
+		.category = "Board Information",
+		.type = FIELD_TYPE_STRING,
+		.offset = offsetof(EEPROMStructure_v1, pt1_data.chip_die),
+		.size = 3,
+		.min_value = 0,
+		.max_value = 0,
+		.unit = NULL,
+		.format = "%.3s",
+		.read_only = 0
+	},
+	{
+		.name = "Chip Marking",
+		.category = "Board Information",
+		.type = FIELD_TYPE_STRING,
+		.offset = offsetof(EEPROMStructure_v1, pt1_data.chip_marking),
+		.size = 14,
+		.min_value = 0,
+		.max_value = 0,
+		.unit = NULL,
+		.format = "%.14s",
+		.read_only = 0
+	},
+	{
+		.name = "FT Version",
+		.category = "Board Information",
+		.type = FIELD_TYPE_STRING,
+		.offset = offsetof(EEPROMStructure_v1, pt1_data.ft_version),
+		.size = 10,
+		.min_value = 0,
+		.max_value = 0,
+		.unit = NULL,
+		.format = "%.10s",
+		.read_only = 0
+	},
+	{
+		.name = "Chip Tech",
+		.category = "Board Information",
+		.type = FIELD_TYPE_STRING,
+		.offset = offsetof(EEPROMStructure_v1, pt1_data.chip_tech),
+		.size = 3,
+		.min_value = 0,
+		.max_value = 0,
+		.unit = NULL,
+		.format = "%.3s",
+		.read_only = 0
+	},
+	{
+		.name = "Chip Bin",
+		.category = "Board Information",
+		.type = FIELD_TYPE_UINT8,
+		.offset = offsetof(EEPROMStructure_v1, pt1_data.chip_bin),
+		.size = sizeof(uint8_t),
+		.min_value = 0,
+		.max_value = 255,
+		.unit = NULL,
+		.format = "%d",
+		.read_only = 0
+	},
+	{
+		.name = "PCB Version",
+		.category = "Board Information",
+		.type = FIELD_TYPE_HEX16,
+		.offset = offsetof(EEPROMStructure_v1, pt1_data.pcb_version),
+		.size = sizeof(uint16_t),
+		.min_value = 0,
+		.max_value = 0xFFFF,
+		.unit = NULL,
+		.format = "0x%04X",
+		.read_only = 0
+	},
+	{
+		.name = "BOM Version",
+		.category = "Board Information",
+		.type = FIELD_TYPE_UINT8,
+		.offset = offsetof(EEPROMStructure_v1, pt1_data.bom_version),
+		.size = sizeof(uint8_t),
+		.min_value = 0,
+		.max_value = 255,
+		.unit = NULL,
+		.format = "%d",
+		.read_only = 0
+	},
+	{
+		.name = "ASIC Sensor Type",
+		.category = "Board Information",
+		.type = FIELD_TYPE_UINT8,
+		.offset = offsetof(EEPROMStructure_v1, pt1_data.asic_sensor_type),
+		.size = sizeof(uint8_t),
+		.min_value = 0,
+		.max_value = 255,
+		.unit = NULL,
+		.format = "%d",
+		.read_only = 0
+	},
+	{
+		.name = "PT1 Result",
+		.category = "Board Information",
+		.type = FIELD_TYPE_UINT8,
+		.offset = offsetof(EEPROMStructure_v1, pt1_data.pt1_result),
+		.size = sizeof(uint8_t),
+		.min_value = 0,
+		.max_value = 1,
+		.unit = NULL,
+		.format = "%d",
+		.read_only = 0
+	},
+	{
+		.name = "PT1 Count",
+		.category = "Board Information",
+		.type = FIELD_TYPE_UINT8,
+		.offset = offsetof(EEPROMStructure_v1, pt1_data.pt1_count),
+		.size = sizeof(uint8_t),
+		.min_value = 0,
+		.max_value = 255,
+		.unit = NULL,
+		.format = "%d",
+		.read_only = 0
+	},
+
+	// PT2: Test Parameters
+	{
+		.name = "PSU Voltage",
+		.category = "Test Parameters",
+		.type = FIELD_TYPE_VOLTAGE,
+		.offset = offsetof(EEPROMStructure_v1, pt2_data.voltage),
+		.size = sizeof(uint16_t),
+		.min_value = 1000,
+		.max_value = 1500,
+		.unit = "V",
+		.format = "%.2f V",
+		.read_only = 0
+	},
+	{
+		.name = "Frequency",
+		.category = "Test Parameters",
+		.type = FIELD_TYPE_UINT16,
+		.offset = offsetof(EEPROMStructure_v1, pt2_data.frequency),
+		.size = sizeof(uint16_t),
+		.min_value = 100,
+		.max_value = 1000,
+		.unit = "MHz",
+		.format = "%d MHz",
+		.read_only = 0
+	},
+	{
+		.name = "Nonce Rate",
+		.category = "Test Parameters",
+		.type = FIELD_TYPE_UINT16,
+		.offset = offsetof(EEPROMStructure_v1, pt2_data.nonce_rate),
+		.size = sizeof(uint16_t),
+		.min_value = 0,
+		.max_value = 65535,
+		.unit = NULL,
+		.format = "%.2f",
+		.read_only = 0
+	},
+	{
+		.name = "Done Type",
+		.category = "Test Parameters",
+		.type = FIELD_TYPE_UINT8,
+		.offset = offsetof(EEPROMStructure_v1, pt2_data.done_type),
+		.size = sizeof(uint8_t),
+		.min_value = 0,
+		.max_value = 255,
+		.unit = NULL,
+		.format = "%d",
+		.read_only = 0
+	},
+	{
+		.name = "PCB Temp In",
+		.category = "Test Parameters",
+		.type = FIELD_TYPE_INT8,
+		.offset = offsetof(EEPROMStructure_v1, pt2_data.temp_in),
+		.size = sizeof(int8_t),
+		.min_value = -40,
+		.max_value = 125,
+		.unit = "°C",
+		.format = "%d °C",
+		.read_only = 0
+	},
+	{
+		.name = "PCB Temp Out",
+		.category = "Test Parameters",
+		.type = FIELD_TYPE_INT8,
+		.offset = offsetof(EEPROMStructure_v1, pt2_data.temp_out),
+		.size = sizeof(int8_t),
+		.min_value = -40,
+		.max_value = 125,
+		.unit = "°C",
+		.format = "%d °C",
+		.read_only = 0
+	},
+	{
+		.name = "PT2 Result",
+		.category = "Test Parameters",
+		.type = FIELD_TYPE_UINT8,
+		.offset = offsetof(EEPROMStructure_v1, pt2_data.pt2_result),
+		.size = sizeof(uint8_t),
+		.min_value = 0,
+		.max_value = 1,
+		.unit = NULL,
+		.format = "%d",
+		.read_only = 0
+	},
+	{
+		.name = "PT2 Count",
+		.category = "Test Parameters",
+		.type = FIELD_TYPE_UINT8,
+		.offset = offsetof(EEPROMStructure_v1, pt2_data.pt2_count),
+		.size = sizeof(uint8_t),
+		.min_value = 0,
+		.max_value = 255,
+		.unit = NULL,
+		.format = "%d",
+		.read_only = 0
+	}
+
+};
+
+#define EEPROM_V1_FIELD_COUNT (sizeof(eeprom_v1_fields) / sizeof(eeprom_v1_fields[0]))
+
 // Get field metadata for EEPROM version
 static inline const FieldMetadata* eeprom_get_fields(EEPROMVersion version, size_t *count)
 {
 	switch (version)
 	{
+		case EEPROM_VERSION_V1:
+			if (count) *count = EEPROM_V1_FIELD_COUNT;
+			return eeprom_v1_fields;
+
 		case EEPROM_VERSION_V4:
 		case EEPROM_VERSION_V5:
 		case EEPROM_VERSION_V6:

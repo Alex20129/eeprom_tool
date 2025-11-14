@@ -5,17 +5,17 @@
 //#include <arpa/inet.h>
 #if !defined(__BYTE_ORDER__) || (__BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__)
 static inline uint16_t htons(uint16_t x){
-    return __builtin_bswap16(x);
+	return __builtin_bswap16(x);
 }
 static inline uint16_t ntohs(uint16_t x){
-    return __builtin_bswap16(x);
+	return __builtin_bswap16(x);
 }
 #else
 static inline uint16_t htons (uint16_t a){
-    return (a);// BE
+	return (a);// BE
 }
 static inline uint16_t ntohs (uint16_t a){
-    return (a);// BE
+	return (a);// BE
 }
 #endif
 // ═══════════════════════════════════════════════════════════════
@@ -65,4 +65,18 @@ void eeprom_v17_serialize(const EEPROMStructure_v17 *eeprom, uint8_t *data)
 	memcpy(data + EEPROM_V17_HEADER_SIZE,
 		   &temp.data,
 		   EEPROM_V17_DATA_SIZE);
+}
+
+// ═══════════════════════════════════════════════════════════════
+// EEPROM v1 (S21+ series)
+// ═══════════════════════════════════════════════════════════════
+
+void eeprom_v1_parse(EEPROMStructure_v1 *eeprom, const uint8_t *data)
+{
+	memcpy(eeprom, data, sizeof(EEPROMStructure_v1));
+}
+
+void eeprom_v1_serialize(const EEPROMStructure_v1 *eeprom, uint8_t *data)
+{
+	memcpy(data, eeprom, sizeof(EEPROMStructure_v1));
 }
