@@ -69,37 +69,6 @@ void ui_print_category_header(const char *category)
 }
 
 // ═══════════════════════════════════════════════════════════════
-// Hex Dump Functions
-// ═══════════════════════════════════════════════════════════════
-
-static void ui_print_hex_dump(const uint8_t *data, size_t size)
-{
-	for (size_t i = 0; i < size; i += 16)
-	{
-		printf("  %04zX: ", i);
-
-		for (size_t j = 0; j < 16; j++)
-		{
-			if (i + j < size)
-			{
-				printf("%02X ", data[i + j]);
-			}
-			else
-			{
-				printf("   ");
-			}
-
-			if (j == 7)
-			{
-				printf(" ");
-			}
-		}
-
-		printf("\n");
-	}
-}
-
-// ═══════════════════════════════════════════════════════════════
 // Input Functions with Validation
 // ═══════════════════════════════════════════════════════════════
 
@@ -265,7 +234,7 @@ void ui_print_field(const void *base, const FieldMetadata *field)
 		case FIELD_TYPE_HASHRATE:
 		{
 			uint16_t value = *(const uint16_t*)ptr;
-			snprintf(value_buf, sizeof(value_buf), "%.2f GH/s", value / 100.0f);
+			snprintf(value_buf, sizeof(value_buf), field->format, value / 100.0f);
 			break;
 		}
 
@@ -273,11 +242,26 @@ void ui_print_field(const void *base, const FieldMetadata *field)
 		{
 			if (strcmp(field->name, "ASIC Frequencies") == 0)
 			{
-				const EEPROMStructure *eeprom = (const EEPROMStructure*)base;
-				uint16_t freq_base = eeprom->sweep_data.sweep_freq_base;
-				uint8_t freq_step = eeprom->sweep_data.sweep_freq_step;
-				size_t array_size = field->size;  // 128 bytes for v4/v5/v6
+				uint16_t freq_base;
+				uint8_t freq_step;
+				size_t array_size = field->size;
 				const uint8_t *array = (const uint8_t*)ptr;
+
+				// Определяем версию EEPROM по offset
+				if (field->offset == offsetof(EEPROMStructure_v1, sweep_data.sweep_level))
+				{
+					// EEPROM v1 (S21+)
+					const EEPROMStructure_v1 *eeprom = (const EEPROMStructure_v1*)base;
+					freq_base = eeprom->sweep_data.sweep_freq_base;
+					freq_step = eeprom->sweep_data.sweep_freq_step;
+				}
+				else
+				{
+					// EEPROM v4/v5/v6 (S19/S19+)
+					const EEPROMStructure *eeprom = (const EEPROMStructure*)base;
+					freq_base = eeprom->sweep_data.sweep_freq_base;
+					freq_step = eeprom->sweep_data.sweep_freq_step;
+				}
 
 				printf("  " TERM_BOLD "%-27s" TERM_RESET ":", field->name);
 				if (field->read_only)
@@ -383,16 +367,6 @@ void ui_print_eeprom(const void *eeprom_struct, EEPROMVersion version)
 		}
 
 		ui_print_field(eeprom_struct, field);
-	}
-
-	// Special handling for EEPROM v1 SWEEP region (raw data)
-	if (version == EEPROM_VERSION_V1)
-	{
-		const EEPROMStructure_v1 *eeprom_v1 = (const EEPROMStructure_v1*)eeprom_struct;
-
-		ui_print_category_header("SWEEP Region (raw data)");
-		printf("  " TERM_DIM "Structure unknown - showing decrypted raw bytes\n" TERM_RESET);
-		ui_print_hex_dump(eeprom_v1->sweep_data_raw, 144);
 	}
 
 	printf("\n");

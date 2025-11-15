@@ -26,7 +26,7 @@ typedef enum
 	FIELD_TYPE_HEX8,            // uint8_t displayed as hex
 	FIELD_TYPE_HEX16,           // uint16_t displayed as hex
 	FIELD_TYPE_VOLTAGE,         // uint16_t / 100 → float (V)
-	FIELD_TYPE_HASHRATE,        // uint16_t / 100 → float (GH/s)
+	FIELD_TYPE_HASHRATE,        // uint16_t / 100 → float (unit in metadata: GH/s or TH/s)
 	FIELD_TYPE_ARRAY_UINT8      // Array of uint8_t
 } FieldType;
 
@@ -1205,6 +1205,92 @@ static const FieldMetadata eeprom_v1_fields[] =
 		.category = "Test Parameters",
 		.type = FIELD_TYPE_UINT8,
 		.offset = offsetof(EEPROMStructure_v1, pt2_data.pt2_count),
+		.size = sizeof(uint8_t),
+		.min_value = 0,
+		.max_value = 255,
+		.unit = NULL,
+		.format = "%d",
+		.read_only = 0
+	},
+
+	// SWEEP: Frequency Optimization
+	{
+		.name = "SWEEP Voltage",
+		.category = "Sweep Data",
+		.type = FIELD_TYPE_VOLTAGE,
+		.offset = offsetof(EEPROMStructure_v1, sweep_data.voltage),
+		.size = sizeof(uint16_t),
+		.min_value = 1000,
+		.max_value = 1500,
+		.unit = "V",
+		.format = "%.2f V",
+		.read_only = 0
+	},
+	{
+		.name = "Sweep Hashrate",
+		.category = "Sweep Data",
+		.type = FIELD_TYPE_HASHRATE,
+		.offset = offsetof(EEPROMStructure_v1, sweep_data.sweep_hashrate),
+		.size = sizeof(uint16_t),
+		.min_value = 0,
+		.max_value = 65535,
+		.unit = "TH/s",
+		.format = "%.2f TH/s",
+		.read_only = 0
+	},
+	{
+		.name = "Sweep Freq Base",
+		.category = "Sweep Data",
+		.type = FIELD_TYPE_UINT16,
+		.offset = offsetof(EEPROMStructure_v1, sweep_data.sweep_freq_base),
+		.size = sizeof(uint16_t),
+		.min_value = 0,
+		.max_value = 2000,
+		.unit = "MHz",
+		.format = "%d MHz",
+		.read_only = 0
+	},
+	{
+		.name = "Sweep Freq Step",
+		.category = "Sweep Data",
+		.type = FIELD_TYPE_UINT8,
+		.offset = offsetof(EEPROMStructure_v1, sweep_data.sweep_freq_step),
+		.size = sizeof(uint8_t),
+		.min_value = 0,
+		.max_value = 255,
+		.unit = "MHz",
+		.format = "%d MHz",
+		.read_only = 0
+	},
+	{
+		.name = "ASIC Frequencies",
+		.category = "Sweep Data",
+		.type = FIELD_TYPE_ARRAY_UINT8,
+		.offset = offsetof(EEPROMStructure_v1, sweep_data.sweep_level),
+		.size = 128,
+		.min_value = 0,
+		.max_value = 0,
+		.unit = NULL,
+		.format = NULL,
+		.read_only = 1
+	},
+	{
+		.name = "Sweep Result",
+		.category = "Sweep Data",
+		.type = FIELD_TYPE_UINT8,
+		.offset = offsetof(EEPROMStructure_v1, sweep_data.sweep_result),
+		.size = sizeof(uint8_t),
+		.min_value = 0,
+		.max_value = 1,
+		.unit = NULL,
+		.format = "%d",
+		.read_only = 0
+	},
+	{
+		.name = "Sweep Count",
+		.category = "Sweep Data",
+		.type = FIELD_TYPE_UINT8,
+		.offset = offsetof(EEPROMStructure_v1, sweep_data.sweep_count),
 		.size = sizeof(uint8_t),
 		.min_value = 0,
 		.max_value = 255,
