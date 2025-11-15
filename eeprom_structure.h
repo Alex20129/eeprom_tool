@@ -145,8 +145,17 @@ typedef struct __attribute__((__packed__))
 	} pt2_data;
 
 	// SWEEP: Frequency Optimization (144 bytes, encrypted)
-	// Structure unknown - storing as raw data
-	uint8_t sweep_data_raw[144];     // 0-143: Raw encrypted SWEEP data (includes CRC at byte 143)
+	struct __attribute__((__packed__)) {
+		uint16_t voltage;            // 0-1: PSU voltage (in 0.01V)
+		uint16_t sweep_hashrate;     // 2-3: Sweep hashrate
+		uint16_t sweep_freq_base;    // 4-5: Base frequency for sweep (MHz)
+		uint8_t sweep_freq_step;     // 6: Frequency step (MHz)
+		uint8_t sweep_level[128];    // 7-134: Per-ASIC frequency levels
+		uint8_t sweep_result;        // 135: Sweep test result
+		uint8_t sweep_count;         // 136: Sweep count
+		uint8_t placeholder[6];      // 137-142: Reserved
+		uint8_t sweep_crc;           // 143: CRC8 for this block
+	} sweep_data;
 } EEPROMStructure_v1;
 
 void eeprom_v1_parse(EEPROMStructure_v1 *eeprom, const uint8_t *data);
