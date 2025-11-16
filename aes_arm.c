@@ -19,6 +19,13 @@ $ clang --target=aarch64 -march=armv8-a+crypto -O3 -S -o aes_arm.s  aes_arm.c
 $ llvm-mca --march=aarch64 --mcpu=cortex-a57 -timeline aes_arm.s
  */
 #include <stdint.h>
+typedef struct _AES_Ctx AES_Ctx;
+void AES_KeyExpansion(AES_Ctx * ctx, const uint8_t* key, int klen, int ekb);
+void AES_EBC_128_encrypt(AES_Ctx*ctx, uint8_t* dst, const uint8_t* src, int length);
+void AES_CBC_128_encrypt(AES_Ctx*ctx, uint8_t* dst, const uint8_t* src, int length);
+void AES_EBC_128_decrypt(AES_Ctx*ctx, uint8_t* dst, const uint8_t* src, int length);
+void AES_CBC_128_decrypt(AES_Ctx*ctx, uint8_t* dst, const uint8_t* src, int length);
+void AES_set_iv(AES_Ctx * ctx, const uint8_t* iv, int iv_len);
 
 typedef struct _Cipher Cipher_t;
 struct _Cipher {
@@ -110,7 +117,7 @@ void AES_CBC_128_decrypt(AES_Ctx *ctx, uint8_t* dst, const uint8_t* src, int len
         d = aes_decrypt_block(ctx, v, rounds);
         if ((--i)==0) break;
         v = vld1q_u8( src+16*i-16);
-		vst1q_u8(dst+i*16, veorq_u8(d, ctx->K[i]));
+		vst1q_u8(dst+i*16, veorq_u8(d, v));
     } while(1);
     vst1q_u8(dst+i*16, veorq_u8(d, ctx->iv));
 }
@@ -127,7 +134,7 @@ void AES_CBC_128_decrypt(AES_Ctx *ctx, uint8_t* dst, const uint8_t* src, int len
     первый и последний ключи остаются без изменений, остальные инвертируются
 
  */
-void KeyExpansion(AES_Ctx * ctx, const uint8_t* key, int ekb)
+void AES_KeyExpansion(AES_Ctx * ctx, const uint8_t* key, int klen, int ekb)
 {
     uint32_t *w = (uint32_t*)ctx->K;//,
     int Nk = (ekb&0xFFFF)/32;
@@ -164,7 +171,7 @@ void KeyExpansion(AES_Ctx * ctx, const uint8_t* key, int ekb)
 		ctx->K[Nr/2] = InvMixColumns4(ctx->K[Nr/2]);
     }
 }
-void AES_set_iv(AES_Ctx * ctx, uint8_t* iv, int iv_len){
+void AES_set_iv(AES_Ctx * ctx, const uint8_t* iv, int iv_len){
 	ctx->iv = vld1q_u8(iv);
 }
 #if defined(TEST_AES)
@@ -200,11 +207,11 @@ int main(int argc, char* argv[])
 	};
 
 	/* Result */
-	uint8_t result[19] = { 0 };
+	uint8_t result[3+16*4] = { 0 };
 
 //	struct _Cipher ctx = {.key= key, .subkeys = (const uint8_t*)subkeys };
 	struct _AES_Ctx aes_ctx;
-	KeyExpansion(&aes_ctx, key, 128);
+	AES_KeyExpansion(&aes_ctx, key, 16, 128);
 	AES_EBC_128_encrypt(&aes_ctx, result+3, input, 16);
 
 	printf("Input: ");
@@ -226,21 +233,45 @@ int main(int argc, char* argv[])
 	const uint8_t exp[16] = {
 		0x39, 0x25, 0x84, 0x1D, 0x02, 0xDC, 0x09, 0xFB, 0xDC, 0x11, 0x85, 0x97, 0x19, 0x6A, 0x0B, 0x32
 	};
-
+    uint8_t IV[] = {
+		0x00,0x01,0x02,0x03, 0x04,0x05,0x06,0x07, 0x08,0x09,0x0A,0x0B, 0x0C,0x0D,0x0E,0x0F};
+    uint8_t Plaintext[] = {
+        0x6B,0xC1,0xBE,0xE2, 0x2E,0x40,0x9F,0x96, 0xE9,0x3D,0x7E,0x11, 0x73,0x93,0x17,0x2A,
+        0xAE,0x2D,0x8A,0x57, 0x1E,0x03,0xAC,0x9C, 0x9E,0xB7,0x6F,0xAC, 0x45,0xAF,0x8E,0x51,
+        0x30,0xC8,0x1C,0x46, 0xA3,0x5C,0xE4,0x11, 0xE5,0xFB,0xC1,0x19, 0x1A,0x0A,0x52,0xEF,
+        0xF6,0x9F,0x24,0x45, 0xDF,0x4F,0x9B,0x17, 0xAD,0x2B,0x41,0x7B, 0xE6,0x6C,0x37,0x10,
+    };
+	uint8_t Ciphertext[] = {
+		0x76,0x49,0xAB,0xAC, 0x81,0x19,0xB2,0x46, 0xCE,0xE9,0x8E,0x9B, 0x12,0xE9,0x19,0x7D,
+		0x50,0x86,0xCB,0x9B, 0x50,0x72,0x19,0xEE, 0x95,0xDB,0x11,0x3A, 0x91,0x76,0x78,0xB2,
+		0x73,0xBE,0xD6,0xB8, 0xE3,0xC1,0x74,0x3B, 0x71,0x16,0xE6,0x9E, 0x22,0x22,0x95,0x16,
+		0x3F,0xF1,0xCA,0xA1, 0x68,0x1F,0xAC,0x09, 0x12,0x0E,0xCA,0x30, 0x75,0x86,0xE1,0xA7,
+	};
 	if (0 == memcmp(result+3, exp, 16))
-		printf("SUCCESS!!!\n");
+		printf("AES ECB 128 encrypt ..OK\n");
 	else
-		printf("FAILURE!!!\n");
+		printf("..FAIL\n");
+	AES_set_iv (&aes_ctx, IV, 16);
+	AES_CBC_128_encrypt(&aes_ctx, result+3, Plaintext, 16*4);
+	if (0 == memcmp(result+3, Ciphertext, 16*4))
+		printf("AES CBC 128 encrypt ..OK\n");
+	else
+		printf("..FAIL\n");
 
-	KeyExpansion(&aes_ctx, key, 128| (1u<<16));
+	AES_KeyExpansion(&aes_ctx, key, 16, 128| (1u<<16));
 	AES_EBC_128_decrypt(&aes_ctx, result+3, exp, 16);
 	if (0 == memcmp(result+3, input, 16))
-		printf("SUCCESS!!!\n");
+		printf("AES ECB 128 decrypt ..OK\n");
 	else
-		printf("FAILURE!!!\n");
+		printf("..FAIL\n");
+    AES_CBC_128_decrypt(&aes_ctx, result+3, Ciphertext, 16*4);
+	if (0 == memcmp(result+3, Plaintext, 16*4))
+		printf("AES CBC 128 decrypt ..OK\n");
+	else
+		printf("..FAIL\n");
 
 /* проверка генерации subkeys
-	KeyExpansion(&aes_ctx, key, 128);
+	AES_KeyExpansion(&aes_ctx, key,16, 128);
 
 	for (int r = 0; r<=10; r++){
 		uint8x16_t v = aes_ctx.K[r];
